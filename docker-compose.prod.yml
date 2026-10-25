@@ -1,0 +1,88 @@
+# Coolify resource (build pack "Docker Compose"). Only web gets a domain,
+# it forwards /api to the API internally. The CI builds the images and sets
+# IMAGE_PREFIX and IMAGE_TAG on every deploy, Coolify only pulls them.
+services:
+  web:
+    image: ${IMAGE_PREFIX:?IMAGE_PREFIX is required}-web:${IMAGE_TAG:?IMAGE_TAG is required}
+    environment:
+      - API_INTERNAL_URL=http://api:3000
+      - ORIGIN=${APP_URL}
+      - PUBLIC_SENTRY_DSN=${PUBLIC_SENTRY_DSN:-}
+      - SENTRY_DSN=${SENTRY_DSN:-}
+      - PUBLIC_POSTHOG_KEY=${PUBLIC_POSTHOG_KEY:-}
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  api:
+    image: ${IMAGE_PREFIX:?IMAGE_PREFIX is required}-api:${IMAGE_TAG:?IMAGE_TAG is required}
+    stop_grace_period: 30s
+    environment:
+      - DATABASE_URL=postgresql://app:${POSTGRES_PASSWORD}@postgres:5432/app
+      - APP_URL=${APP_URL}
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASS=${SMTP_PASS:-}
+      - EMAIL_FROM=${EMAIL_FROM:-}
+      - SIGNUP_ALLOWLIST=${SIGNUP_ALLOWLIST:-}
+      - SIGNUP_OPEN=${SIGNUP_OPEN:-}
+      - ADMIN_EMAILS=${ADMIN_EMAILS:-}
+      - FEEDBACK_EMAIL=${FEEDBACK_EMAIL:-}
+      - FEEDBACK_GITHUB_TOKEN=${FEEDBACK_GITHUB_TOKEN:-}
+      - APPLE_TEAM_ID=${APPLE_TEAM_ID:-}
+      - ANDROID_CERT_SHA256=${ANDROID_CERT_SHA256:-}
+      - MIN_BUILD_IOS=${MIN_BUILD_IOS:-}
+      - MIN_BUILD_ANDROID=${MIN_BUILD_ANDROID:-}
+      - SENTRY_DSN=${SENTRY_DSN:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Background jobs from the API image, see apps/api/src/worker.ts. Starts once
+  # the API has migrated the database.
+  worker:
+    image: ${IMAGE_PREFIX:?IMAGE_PREFIX is required}-api:${IMAGE_TAG:?IMAGE_TAG is required}
+    stop_grace_period: 30s
+    command: ["bun", "apps/api/src/worker.ts"]
+    environment:
+      - DATABASE_URL=postgresql://app:${POSTGRES_PASSWORD}@postgres:5432/app
+      - APP_URL=${APP_URL}
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASS=${SMTP_PASS:-}
+      - EMAIL_FROM=${EMAIL_FROM:-}
+      - UPDATE_MAIL_INTERVAL_MS=${UPDATE_MAIL_INTERVAL_MS:-6000}
+      - SENTRY_DSN=${SENTRY_DSN:-}
+    healthcheck:
+      test: ["CMD", "bun", "-e", "fetch('http://localhost:3001/health').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: app
+    # Keeps one database from starving the other apps on the server
+    mem_limit: ${POSTGRES_MEMORY:-512m}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  pgdata:

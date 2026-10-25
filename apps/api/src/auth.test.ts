@@ -1,0 +1,454 @@
+import { afterAll, beforeAll, beforeEach, expect, setSystemTime, spyOn, test } from 'bun:test';
+import { createDb, migrateDb, passkeys, rateLimits, sessions, users } from '@app/db';
+import { APP_ID, messages } from '@app/shared';
+import { eq } from 'drizzle-orm';
+import { z } from 'zod';
+import { createApp } from './app';
+import { issueSession } from './lib/login';
+import { relyingParty } from './lib/passkeys';
+import { generateToken, hashToken } from './middleware/auth';
+import { altchaPayload, body, read } from './testing';
+
+const db = createDb(process.env.DATABASE_URL);
+const app = createApp(db);
+const log = spyOn(console, 'log');
+
+beforeAll(() => migrateDb(process.env.DATABASE_URL));
+afterAll(() => db.$client.end());
+
+// Most tests sign up fresh addresses, the closed case has its own test
+process.env.SIGNUP_OPEN = 'true';
+
+const freshEmail = () => `test-${crypto.randomUUID()}@example.com`;
+
+// Rate limits live in the database, so every test counts against its own address
+let ip = '';
+beforeEach(() => {
+  ip = crypto.randomUUID();
+});
+
+// Login mails need a solved ALTCHA like the login form sends it, the ALTCHA tests post without
+const ALTCHA_PATHS = ['/auth/magic-link', '/auth/code'];
+
+async function post(path: string, body: object, headers: Record<string, string> = {}) {
+  const altcha = ALTCHA_PATHS.includes(path) ? { altcha: await altchaPayload(app) } : {};
+  return send(path, { ...body, ...altcha }, headers);
+}
+
+function send(path: string, body: unknown, headers: Record<string, string> = {}) {
+  return app.request(`/api/v1${path}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-forwarded-for': ip, ...headers },
+    body: JSON.stringify(body),
+  });
+}
+
+const userAnswer = z.object({ user: z.object({ id: z.string(), email: z.string() }), token: z.string().optional() });
+
+// Without SMTP_HOST the login mail lands in the log
+function lastMail() {
+  return log.mock.calls.map((args) => String(args[0])).findLast((line) => line.startsWith('[mail]'));
+}
+
+const mailCount = () => log.mock.calls.filter((args) => String(args[0]).startsWith('[mail]')).length;
+
+function lastMailedToken() {
+  return lastMail()?.match(/token=([0-9a-f]+)/)?.[1];
+}
+
+function lastMailedCode() {
+  return lastMail()?.match(/(?:Dein Code:|diesen Code ein:) (\d{6})/)?.[1];
+}
+
+const otherCode = (code: string) => (code === '000000' ? '000001' : '000000');
+
+test('health checks the database', async () => {
+  const res = await app.request('/api/health');
+  expect(res.status).toBe(200);
+  expect(await body(res)).toMatchObject({ status: 'ok', revision: expect.any(String) });
+});
+
+test('magic link logs in, creates the account and logs out', async () => {
+  const email = freshEmail();
+  expect((await post('/auth/magic-link', { email: ` ${email.toUpperCase()} ` })).status).toBe(200);
+  const token = lastMailedToken()!;
+
+  const verify = await post('/auth/verify', { token });
+  expect(verify.status).toBe(200);
+  expect(await body(verify)).toMatchObject({ user: { email, name: email.split('@')[0] } });
+  const session = verify.headers.get('set-cookie')!.match(/session=([0-9a-f]+)/)![1]!;
+
+  const me = await app.request('/api/v1/auth/me', { headers: { cookie: `session=${session}` } });
+  expect(await body(me)).toMatchObject({ user: { email } });
+
+  // Native clients send the same token as a bearer token
+  const rename = await app.request('/api/v1/auth/me', {
+    method: 'PATCH',
+    headers: { authorization: `Bearer ${session}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ name: 'Robin' }),
+  });
+  expect(await body(rename)).toMatchObject({ user: { name: 'Robin' } });
+
+  expect((await post('/auth/verify', { token })).status).toBe(400);
+
+  await post('/auth/logout', {}, { cookie: `session=${session}` });
+  const after = await app.request('/api/v1/auth/me', { headers: { cookie: `session=${session}` } });
+  expect(await body(after)).toEqual({ user: null });
+});
+
+test('login mails need an ALTCHA solution that is valid and unused', async () => {
+  const email = freshEmail();
+  const mails = mailCount();
+  const missing = await send('/auth/magic-link', { email }, { 'accept-language': 'en' });
+  expect(missing.status).toBe(403);
+  expect(await body(missing)).toEqual({ error: messages.en.altchaFailed });
+  expect((await send('/auth/code', { email, altcha: btoa('nonsense') })).status).toBe(403);
+
+  const altcha = await altchaPayload(app);
+  const { challenge, solution } = JSON.parse(atob(altcha));
+  const easier = { ...challenge, parameters: { ...challenge.parameters, cost: 1 } };
+  const wrong = { ...solution, counter: solution.counter + 1 };
+  for (const forged of [
+    { challenge: easier, solution },
+    { challenge, solution: wrong },
+  ])
+    expect((await send('/auth/code', { email, altcha: btoa(JSON.stringify(forged)) })).status).toBe(403);
+  expect(mailCount()).toBe(mails);
+
+  expect((await send('/auth/code', { email, altcha })).status).toBe(200);
+  expect((await send('/auth/magic-link', { email, altcha })).status).toBe(403);
+  expect(mailCount()).toBe(mails + 1);
+});
+
+test('an ALTCHA solution expires after ten minutes', async () => {
+  const altcha = await altchaPayload(app);
+  setSystemTime(new Date(Date.now() + 11 * 60 * 1000));
+  try {
+    expect((await send('/auth/magic-link', { email: freshEmail(), altcha })).status).toBe(403);
+  } finally {
+    setSystemTime();
+  }
+});
+
+test('requests without ALTCHA leave the rate limits of an address alone', async () => {
+  const email = freshEmail();
+  for (let i = 0; i < 10; i++) await send('/auth/magic-link', { email });
+  expect((await post('/auth/magic-link', { email })).status).toBe(200);
+});
+
+test('a second login reuses the account', async () => {
+  const email = freshEmail();
+  const ids: string[] = [];
+  for (let i = 0; i < 2; i++) {
+    await post('/auth/magic-link', { email });
+    ids.push((await read(post('/auth/verify', { token: lastMailedToken() }), userAnswer)).user.id);
+  }
+  expect(ids[0]).toBe(ids[1]);
+});
+
+test('magic link checks allow 60 attempts per IP and leave blocked links usable', async () => {
+  const email = freshEmail();
+  expect((await post('/auth/magic-link', { email })).status).toBe(200);
+  const token = lastMailedToken()!;
+
+  const attempts = await Promise.all(Array.from({ length: 60 }, () => post('/auth/verify', { token: 'invalid' })));
+  expect(attempts.map((res) => res.status)).toEqual(Array(60).fill(400));
+  const blocked = await post('/auth/verify', { token }, { 'accept-language': 'en' });
+  expect(blocked.status).toBe(429);
+  expect(await body(blocked)).toEqual({ error: messages.en.tooManyRequests });
+  expect(blocked.headers.get('set-cookie')).toBeNull();
+
+  expect((await post('/auth/verify', { token }, { 'x-forwarded-for': crypto.randomUUID() })).status).toBe(200);
+
+  expect((await post('/auth/magic-link', { email })).status).toBe(200);
+  const nextToken = lastMailedToken()!;
+  expect((await post('/auth/verify', { token: nextToken })).status).toBe(429);
+  await db
+    .update(rateLimits)
+    .set({ resetAt: new Date(Date.now() - 1) })
+    .where(eq(rateLimits.key, `link-checks-per-ip:${ip}`));
+  expect((await post('/auth/verify', { token: nextToken })).status).toBe(200);
+});
+
+test('protected routes need a session', async () => {
+  const res = await app.request('/api/v1/auth/me', { method: 'PATCH', body: '{}' });
+  expect(res.status).toBe(401);
+});
+
+test('login mails per address are rate limited', async () => {
+  const email = freshEmail();
+  const statuses: number[] = [];
+  for (let i = 0; i < 6; i++) statuses.push((await post('/auth/magic-link', { email })).status);
+  expect(statuses).toEqual([200, 200, 200, 200, 200, 429]);
+});
+
+test('invalid input answers with an error message', async () => {
+  const res = await post('/auth/magic-link', { email: 'no-address' });
+  expect(res.status).toBe(400);
+  expect(await body(res)).toEqual({ error: expect.any(String) });
+});
+
+test('errors and mails follow Accept-Language, German by default', async () => {
+  const english = { 'accept-language': 'fr-FR,fr;q=0.9,en;q=0.8' };
+  expect(await body(post('/auth/magic-link', { email: 'no-address' }, english))).toEqual({
+    error: 'The email address is invalid.',
+  });
+  expect(await body(post('/auth/magic-link', { email: 'no-address' }))).toEqual({
+    error: 'Die E-Mail-Adresse ist ungültig.',
+  });
+
+  await post('/auth/code', { email: freshEmail() }, english);
+  expect(lastMail()).toContain('is your login code');
+});
+
+test('apps log in with a code and get a bearer token', async () => {
+  const email = freshEmail();
+  expect((await post('/auth/code', { email })).status).toBe(200);
+  const code = lastMailedCode()!;
+
+  expect((await post('/auth/code/verify', { email, code: otherCode(code) })).status).toBe(400);
+  const verify = await post('/auth/code/verify', { email, code });
+  expect(verify.status).toBe(200);
+  expect(verify.headers.get('set-cookie')).toBeNull();
+  const { user, token } = await read(verify, userAnswer);
+  expect(user.email).toBe(email);
+
+  const me = await app.request('/api/v1/auth/me', { headers: { authorization: `Bearer ${token}` } });
+  expect(await body(me)).toMatchObject({ user: { id: user.id } });
+
+  expect((await post('/auth/code/verify', { email, code })).status).toBe(400);
+});
+
+test('the login mail of the web also carries a code, which logs in with a cookie', async () => {
+  const email = freshEmail();
+  await post('/auth/magic-link', { email });
+  expect(lastMailedToken()).toBeDefined();
+  const code = lastMailedCode()!;
+
+  const verify = await post('/auth/code/verify', { email, code, cookie: true });
+  expect(verify.status).toBe(200);
+  const json = await read(verify, userAnswer);
+  expect(json.user.email).toBe(email);
+  expect(json.token).toBeUndefined();
+  const session = verify.headers.get('set-cookie')!.match(/session=([0-9a-f]+)/)![1]!;
+  const me = await app.request('/api/v1/auth/me', { headers: { cookie: `session=${session}` } });
+  expect(await body(me)).toMatchObject({ user: { email } });
+});
+
+test('a code stops working after five wrong tries', async () => {
+  const email = freshEmail();
+  await post('/auth/code', { email });
+  const code = lastMailedCode()!;
+  for (let i = 0; i < 5; i++) await post('/auth/code/verify', { email, code: otherCode(code) });
+  expect((await post('/auth/code/verify', { email, code })).status).toBe(400);
+});
+
+test('closed sign-up mails only existing accounts and the allowlist', async () => {
+  const allowed = freshEmail();
+  const [existing] = await db.insert(users).values({ email: freshEmail(), name: 'Lena' }).returning();
+  delete process.env.SIGNUP_OPEN;
+  process.env.SIGNUP_ALLOWLIST = ` ${allowed.toUpperCase()} , someone@example.com`;
+  try {
+    const mails = mailCount();
+    const stranger = freshEmail();
+    const link = await post('/auth/magic-link', { email: stranger });
+    expect(link.status).toBe(403);
+    expect(await body(link)).toEqual({
+      error: 'Die Registrierung ist noch geschlossen. Für diese Adresse gibt es noch kein Konto.',
+    });
+    expect((await post('/auth/code', { email: stranger })).status).toBe(403);
+    expect(mailCount()).toBe(mails);
+
+    expect((await post('/auth/code', { email: existing!.email })).status).toBe(200);
+    expect((await post('/auth/magic-link', { email: allowed })).status).toBe(200);
+    expect(await body(post('/auth/verify', { token: lastMailedToken() }))).toMatchObject({ user: { email: allowed } });
+
+    // login-link still works, Savor's test account needs no allowlist entry
+    const run = Bun.spawnSync(['bun', 'src/login-link.ts', stranger], {
+      env: { ...process.env, APP_URL: 'https://app.test' },
+    });
+    const token = new URL(run.stdout.toString().trim()).searchParams.get('token');
+    expect(await body(post('/auth/verify', { token }))).toMatchObject({ user: { email: stranger } });
+  } finally {
+    process.env.SIGNUP_OPEN = 'true';
+    delete process.env.SIGNUP_ALLOWLIST;
+  }
+});
+
+test('closed sign-up rechecks links and codes at redemption, while existing accounts still log in', async () => {
+  const previousOpen = process.env.SIGNUP_OPEN;
+  const previousAllowlist = process.env.SIGNUP_ALLOWLIST;
+  try {
+    for (const method of ['link', 'code'] as const) {
+      for (const existing of [false, true]) {
+        const email = freshEmail();
+        if (existing) await db.insert(users).values({ email, name: 'Lena' });
+        delete process.env.SIGNUP_OPEN;
+        process.env.SIGNUP_ALLOWLIST = email;
+        expect((await post('/auth/magic-link', { email }, { 'x-forwarded-for': crypto.randomUUID() })).status).toBe(
+          200,
+        );
+        const token = lastMailedToken()!;
+        const code = lastMailedCode()!;
+
+        // The grant was issued while allowed, but access was withdrawn before redemption.
+        delete process.env.SIGNUP_ALLOWLIST;
+        const verify = await (method === 'link'
+          ? post('/auth/verify', { token })
+          : post('/auth/code/verify', { email, code }));
+        expect(verify.status).toBe(existing ? 200 : 403);
+        if (existing) {
+          const { user, token } = await read(verify, userAnswer);
+          expect(user.email).toBe(email);
+          const headers: Record<string, string> =
+            method === 'link'
+              ? { cookie: verify.headers.get('set-cookie')!.split(';')[0]! }
+              : { authorization: `Bearer ${token}` };
+          expect(await body(app.request('/api/v1/auth/me', { headers }))).toMatchObject({ user: { id: user.id } });
+        } else {
+          expect(await body(verify)).toEqual({
+            error: 'Die Registrierung ist noch geschlossen. Für diese Adresse gibt es noch kein Konto.',
+          });
+          expect(verify.headers.get('set-cookie')).toBeNull();
+          expect(await db.select().from(users).where(eq(users.email, email))).toEqual([]);
+        }
+      }
+    }
+  } finally {
+    if (previousOpen === undefined) delete process.env.SIGNUP_OPEN;
+    else process.env.SIGNUP_OPEN = previousOpen;
+    if (previousAllowlist === undefined) delete process.env.SIGNUP_ALLOWLIST;
+    else process.env.SIGNUP_ALLOWLIST = previousAllowlist;
+  }
+});
+
+async function sessionFor(email: string) {
+  const [user] = await db.insert(users).values({ email, name: 'Robin' }).returning({ id: users.id });
+  return { cookie: `session=${await issueSession(db, user!.id)}` };
+}
+
+test('admins invite testers past the closed sign-up, others get 403', async () => {
+  const admin = freshEmail();
+  const asAdmin = await sessionFor(admin);
+  const asUser = await sessionFor(freshEmail());
+  delete process.env.SIGNUP_OPEN;
+  process.env.ADMIN_EMAILS = `someone@example.com, ${admin.toUpperCase()}`;
+  try {
+    const me = await app.request('/api/v1/auth/me', { headers: asAdmin });
+    expect(await body(me)).toMatchObject({ user: { admin: true } });
+
+    const tester = freshEmail();
+    expect((await post('/auth/invite', { email: tester })).status).toBe(401);
+    const denied = await post('/auth/invite', { email: tester }, asUser);
+    expect(denied.status).toBe(403);
+    expect(await body(denied)).toEqual({ error: 'Nur für Admins' });
+    expect(await db.select().from(users).where(eq(users.email, tester))).toEqual([]);
+
+    expect((await post('/auth/invite', { email: tester }, asAdmin)).status).toBe(200);
+    expect(lastMail()).toStartWith(`[mail] To ${tester}:`);
+    const verify = await body(post('/auth/verify', { token: lastMailedToken() }));
+    expect(verify).toMatchObject({ user: { email: tester, admin: false } });
+
+    // From now on the tester logs in like any existing account
+    expect((await post('/auth/magic-link', { email: tester })).status).toBe(200);
+    expect(process.env.SIGNUP_OPEN).toBeUndefined();
+  } finally {
+    process.env.SIGNUP_OPEN = 'true';
+    delete process.env.ADMIN_EMAILS;
+  }
+});
+
+test('login-link prints a magic link that logs in', async () => {
+  const email = freshEmail();
+  const run = Bun.spawnSync(['bun', 'src/login-link.ts', email], {
+    env: { ...process.env, APP_URL: 'https://app.test' },
+  });
+  const link = new URL(run.stdout.toString().trim());
+  expect(link.origin + link.pathname).toBe('https://app.test/auth/verify');
+
+  const verify = await post('/auth/verify', { token: link.searchParams.get('token') });
+  expect(await body(verify)).toMatchObject({ user: { email } });
+});
+
+test('a session in use is renewed', async () => {
+  const [user] = await db.insert(users).values({ email: freshEmail(), name: 'Lena' }).returning({ id: users.id });
+  const token = generateToken();
+  const [session] = await db
+    .insert(sessions)
+    .values({ userId: user!.id, tokenHash: hashToken(token), expiresAt: new Date(Date.now() + 60_000) })
+    .returning({ id: sessions.id });
+
+  const me = await app.request('/api/v1/auth/me', { headers: { cookie: `session=${token}` } });
+  expect(me.headers.get('set-cookie')).toContain(`session=${token}`);
+  const [renewed] = await db.select().from(sessions).where(eq(sessions.id, session!.id));
+  expect(renewed!.expiresAt.getTime()).toBeGreaterThan(Date.now() + 364 * 24 * 60 * 60 * 1000);
+
+  // Renewed sessions are left alone for a day
+  const again = await app.request('/api/v1/auth/me', { headers: { cookie: `session=${token}` } });
+  expect(again.headers.get('set-cookie')).toBeNull();
+});
+
+// The full ceremony runs in the browser test with Chromium's virtual authenticator
+test('passkeys belong to logged-in accounts and fail closed', async () => {
+  const asOwner = await sessionFor(freshEmail());
+  const asOther = await sessionFor(freshEmail());
+  expect((await post('/auth/passkeys/register/options', {})).status).toBe(401);
+
+  const rpID = new URL(process.env.APP_URL).hostname;
+  const register = await body(post('/auth/passkeys/register/options', {}, asOwner));
+  expect(register).toMatchObject({ rp: { id: rpID }, authenticatorSelection: { residentKey: 'required' } });
+
+  const login = await body(post('/auth/passkeys/login/options', {}));
+  expect(login).toMatchObject({ rpId: rpID });
+  expect(login).not.toHaveProperty('allowCredentials');
+
+  const response = {
+    id: 'unknown',
+    rawId: 'unknown',
+    type: 'public-key',
+    response: { clientDataJSON: 'e30', authenticatorData: 'AA', signature: 'AA' },
+    clientExtensionResults: {},
+  };
+  const unknown = await post('/auth/passkeys/login', { response });
+  expect(unknown.status).toBe(400);
+  expect(await body(unknown)).toMatchObject({ error: 'Diesen Passkey kennen wir nicht. Melde dich per Mail an.' });
+
+  const owner = (await read(app.request('/api/v1/auth/me', { headers: asOwner }), userAnswer)).user;
+  const id = `test-${crypto.randomUUID()}`;
+  await db.insert(passkeys).values({ id, userId: owner.id, publicKey: Buffer.from([1]), counter: 0, backedUp: true });
+  const forged = await post('/auth/passkeys/login', { response: { ...response, id, rawId: id } });
+  expect(forged.status).toBe(400);
+  expect(forged.headers.get('set-cookie')).toBeNull();
+
+  const del = (headers: Record<string, string>) =>
+    app.request(`/api/v1/auth/passkeys/${id}`, { method: 'DELETE', headers });
+  expect((await del(asOther)).status).toBe(404);
+  expect(await body(app.request('/api/v1/auth/passkeys', { headers: asOwner }))).toEqual({
+    passkeys: [expect.any(Object)],
+  });
+  expect((await del(asOwner)).status).toBe(200);
+  expect(await body(app.request('/api/v1/auth/passkeys', { headers: asOwner }))).toEqual({ passkeys: [] });
+});
+
+test('the app links name the app only once it is configured', async () => {
+  const aasa = '/.well-known/apple-app-site-association';
+  const assetlinks = '/.well-known/assetlinks.json';
+  expect((await app.request(aasa)).status).toBe(404);
+  expect((await app.request(assetlinks)).status).toBe(404);
+
+  process.env.APPLE_TEAM_ID = 'TEAM123';
+  process.env.ANDROID_CERT_SHA256 = 'ab:cd, 01:02';
+  try {
+    expect(await body(app.request(aasa))).toEqual({ webcredentials: { apps: [`TEAM123.${APP_ID}`] } });
+    expect(await body(app.request(assetlinks))).toMatchObject([
+      {
+        target: { namespace: 'android_app', package_name: APP_ID, sha256_cert_fingerprints: ['AB:CD', '01:02'] },
+      },
+    ]);
+    // The Android app signs in as its certificate
+    expect(relyingParty().origins).toContain('android:apk-key-hash:q80');
+  } finally {
+    delete process.env.APPLE_TEAM_ID;
+    delete process.env.ANDROID_CERT_SHA256;
+  }
+});
