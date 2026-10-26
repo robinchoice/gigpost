@@ -1,5 +1,5 @@
 {
-  "name": "starter",
+  "name": "gigpost",
   "private": true,
   "type": "module",
   "workspaces": [
@@ -12,8 +12,7 @@
     "test": "bun run --filter '*' test",
     "build": "bun run --filter '*' build",
     "db:generate": "bun run --filter @app/db db:generate",
-    "format": "biome check --write",
-    "standards": "bun --port 4300 standards/index.html"
+    "format": "biome check --write"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.15",

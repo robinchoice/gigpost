@@ -1,4 +1,8 @@
-# starter
+# Gigpost
+
+Robins Werkzeug fürs Booking: Agenten finden Locations und schreiben Anfragen vor, Robin prüft sie gesammelt, sendet von seiner eigenen Adresse und behält Antworten, Fristen und Gigs im Blick. Live: https://gigpost.pleasance.org. Was für dieses Repo gilt, steht in `AGENTS.md`. Der Rest dieser Datei ist die README der Vorlage `robinchoice/starter`.
+
+## Vorlage
 
 Vorlage für Web- und Mobile-Prototypen: Bun, Hono, SvelteKit, Drizzle und Postgres, dazu eine CLI und optional eine Flutter-App gegen dieselbe API. Deutsch und Englisch mit Umschalter in der Fußzeile, Login per Mail mit Link und Code (Web) oder Code (App) und per Passkey, Feedback-Knopf mit Screenshot, Update-Mails mit Opt-in, ALTCHA vor Login-Mails, Link-Vorschau, Mail über SMTP im Design der App, Rate-Limit, Security-Header mit CSP, GlitchTip, PostHog, Healthcheck, CI mit Browser-Test, Secret-Scan, Dependabot, Coolify-Deploy und Screenshots nach jedem Deploy sind fertig eingebaut.
 

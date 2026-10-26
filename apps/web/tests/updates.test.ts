@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import postgres from 'postgres';
-import { logIn } from './login';
+import { logIn, openMenu } from './login';
 
 const sql = postgres(process.env.DATABASE_URL!, { connection: { timezone: 'UTC' }, onnotice: () => {} });
 test.afterAll(() => sql.end());
@@ -41,6 +41,7 @@ test('the login form asks for update mails without a preset tick', async ({ page
 test('the settings switch turns update mails on and off', async ({ page }) => {
   const email = freshEmail();
   await logIn(page, email);
+  await openMenu(page);
   await page.getByRole('link', { name: 'Einstellungen' }).click();
   const updates = page.getByRole('switch', { name: 'Updates per Mail' });
   await expect(updates).toHaveAttribute('aria-checked', 'false');
@@ -71,6 +72,7 @@ test('the unsubscribe link works without login', async ({ page }) => {
 test('the admin writes an update, previews it and sends it', async ({ page }) => {
   await sql`insert into users (email, name, updates_consent_at) values (${freshEmail()}, 'Lena', now())`;
   await logIn(page, 'e2e-admin@example.com');
+  await openMenu(page);
   await page.getByRole('link', { name: 'Updates' }).click();
   await page.getByRole('button', { name: 'Neues Update' }).click();
 
@@ -96,6 +98,7 @@ test('the admin writes an update, previews it and sends it', async ({ page }) =>
 
 test('others see no updates page and get 403 from the API', async ({ page }) => {
   await logIn(page, freshEmail());
+  await openMenu(page);
   await expect(page.getByRole('link', { name: 'Updates' })).toBeHidden();
   const res = await page.request.get('/api/v1/updates');
   expect(res.status()).toBe(403);

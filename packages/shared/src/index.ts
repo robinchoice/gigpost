@@ -2,19 +2,18 @@ import { z } from 'zod';
 import type { Band } from './band';
 
 export * from './band';
+export * from './booking';
 export * from './messages';
 export * from './monitoring';
 
 // The one place to rename a new project. API mails and web titles read it.
-export const APP_NAME = 'Starter';
+export const APP_NAME = 'Gigpost';
 
-// Bundle ID and Android package of the app, the same as appId in
-// apps/mobile/lib/config.dart. The API names it for passkeys in the app.
-export const APP_ID = 'org.pleasance.starter';
+// Bundle ID, also the name of the CLI. The API names it for passkeys in apps.
+export const APP_ID = 'org.pleasance.gigpost';
 
-// Section of the family colour band for this product, see DESIGN.md. The
-// starter shows the whole band until a project picks its own.
-export const APP_BAND: Band = { from: 1, to: 7 };
+// Section of the family colour band for this product, see DESIGN.md
+export const APP_BAND: Band = { from: 1.95, to: 2.6 };
 
 // True once the project is live as 1.0 (README, "Live als 1.0"). From then on
 // the bug button waits for the test mode switch, see testMode in the web's feedback.svelte.ts.

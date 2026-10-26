@@ -8,6 +8,7 @@ import { captureException } from './monitoring';
 import { agentRoutes } from './routes/agents';
 import { altchaRoutes } from './routes/altcha';
 import { authRoutes } from './routes/auth';
+import { bookingRoutes } from './routes/booking';
 import { feedbackRoutes } from './routes/feedback';
 import { passkeyRoutes, wellKnownRoutes } from './routes/passkeys';
 import { updateRoutes } from './routes/updates';
@@ -57,6 +58,7 @@ export function createApp(db: Database) {
       .route('/altcha', altchaRoutes)
       .route('/auth', authRoutes)
       .route('/auth/passkeys', passkeyRoutes)
+      .route('/booking', bookingRoutes)
       .route('/feedback', feedbackRoutes)
       .route('/updates', updateRoutes)
   );

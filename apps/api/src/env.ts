@@ -13,6 +13,7 @@ const envSchema = z.object({
   PORT: number.or(unset).exactOptional(),
   WORKER_PORT: number.or(unset).exactOptional(),
   SMTP_PORT: number.or(unset).exactOptional(),
+  BOOKING_SMTP_PORT: number.or(unset).exactOptional(),
   UPDATE_MAIL_INTERVAL_MS: number.or(unset).exactOptional(),
   MIN_BUILD_IOS: number.or(unset).exactOptional(),
   MIN_BUILD_ANDROID: number.or(unset).exactOptional(),

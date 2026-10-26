@@ -1,4 +1,4 @@
-import type { FeedbackContext, UpdateContent } from '@app/shared';
+import type { DealEvent, DealItem, Draft, FeedbackContext, Stage, UpdateContent } from '@app/shared';
 import {
   bigint,
   boolean,
@@ -146,3 +146,107 @@ export const updateDeliveries = pgTable(
   },
   (table) => [unique().on(table.updateId, table.userId)],
 );
+
+// Booking (AGENTS.md). One workspace for every account:
+// sign-up is closed, Robin and the agents' test account share it.
+
+// The artists Robin books, every deal belongs to one of them
+export const artists = pgTable('artists', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  name: varchar('name', { length: 200 }).notNull().unique(),
+  // Genre and line-up, e.g. "Indie-Rock, 4 Personen"
+  kind: varchar('kind', { length: 300 }).default('').notNull(),
+  // Link to the press kit the mails point to
+  epk: varchar('epk', { length: 500 }).default('').notNull(),
+  // Colour of the dot in lists and the edge of board cards
+  color: varchar('color', { length: 7 }).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+// Clubs and festivals. Unique by email and by name plus city, so agents
+// don't add a venue twice (see venueKey in @app/shared).
+export const venues = pgTable('venues', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  name: varchar('name', { length: 200 }).notNull(),
+  city: varchar('city', { length: 200 }).notNull(),
+  // Normalised "name|city"
+  key: varchar('key', { length: 401 }).notNull().unique(),
+  capacity: integer('capacity'),
+  genre: varchar('genre', { length: 300 }).default('').notNull(),
+  contact: varchar('contact', { length: 200 }).default('').notNull(),
+  // Stored lowercase
+  email: varchar('email', { length: 255 }).unique(),
+  website: varchar('website', { length: 500 }).default('').notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+// One artist at one venue: the card on the board
+export const deals = pgTable(
+  'deals',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    venueId: uuid('venue_id')
+      .references(() => venues.id, { onDelete: 'cascade' })
+      .notNull(),
+    artistId: uuid('artist_id')
+      .references(() => artists.id, { onDelete: 'cascade' })
+      .notNull(),
+    // See STAGES
+    stage: varchar('stage', { length: 10 }).$type<Stage>().default('draft').notNull(),
+    // Why the agent suggests this venue for this artist
+    why: text('why').default('').notNull(),
+    gigDate: varchar('gig_date', { length: 10 }),
+    fee: varchar('fee', { length: 200 }).default('').notNull(),
+    // A reply came in and Robin hasn't dealt with it yet
+    replyOpen: boolean('reply_open').default(false).notNull(),
+    lastSentAt: timestamp('last_sent_at'),
+    lastReplyAt: timestamp('last_reply_at'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (table) => [unique().on(table.venueId, table.artistId)],
+);
+
+// The mail waiting for Robin, at most one per deal. Sending or discarding deletes it.
+export const drafts = pgTable('drafts', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  dealId: uuid('deal_id')
+    .references(() => deals.id, { onDelete: 'cascade' })
+    .notNull()
+    .unique(),
+  kind: varchar('kind', { length: 10 }).$type<Draft['kind']>().notNull(),
+  to: varchar('to', { length: 500 }).notNull(),
+  subject: varchar('subject', { length: 300 }).notNull(),
+  body: text('body').notNull(),
+  createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+// Notes, deadlines and documents (links for now) of a deal
+export const dealItems = pgTable('deal_items', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  dealId: uuid('deal_id')
+    .references(() => deals.id, { onDelete: 'cascade' })
+    .notNull(),
+  kind: varchar('kind', { length: 10 }).$type<DealItem['kind']>().notNull(),
+  text: varchar('text', { length: 1000 }).notNull(),
+  due: varchar('due', { length: 10 }),
+  url: varchar('url', { length: 1000 }),
+  doneAt: timestamp('done_at'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+// The history of a deal. kind request or followup: a mail went out, text is
+// its subject. reply: Robin marked a reply, text his summary. stage: text is
+// the new stage. The web shows them in the reader's language.
+export const dealEvents = pgTable('deal_events', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  dealId: uuid('deal_id')
+    .references(() => deals.id, { onDelete: 'cascade' })
+    .notNull(),
+  kind: varchar('kind', { length: 10 }).$type<DealEvent['kind']>().notNull(),
+  text: varchar('text', { length: 1000 }).default('').notNull(),
+  // Message-ID of a sent mail, a follow-up answers in the same thread
+  messageId: varchar('message_id', { length: 300 }),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});

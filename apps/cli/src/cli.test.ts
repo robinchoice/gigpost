@@ -239,3 +239,74 @@ test('the entry point passes the exit code to the shell', async () => {
   expect(JSON.parse(await new Response(whoami.stdout).text())).toEqual({ error: messages.en.notLoggedIn });
   expect(await Bun.spawn(['bun', main, '--help'], { env, stdout: 'ignore' }).exited).toBe(0);
 });
+
+test('agents add artists, venues and drafts, never a venue twice', async () => {
+  const email = freshEmail();
+  await createAccount(db, email);
+  const { cli } = await device();
+  await cli(['login', '--link', `${url}/auth/verify?token=${await issueMagicLink(db, email)}`]);
+  const tag = crypto.randomUUID().slice(0, 8);
+
+  const artist = await cli(['artist-add', '--name', `Lumen ${tag}`, '--kind', 'Indie-Rock', '--json']);
+  expect(artist.code).toBe(0);
+  const venue = await cli([
+    'venue-add',
+    '--name',
+    `Jazzhaus ${tag}`,
+    '--city',
+    'Freiburg',
+    '--email',
+    `${tag}@venue.example`,
+    '--capacity',
+    '400',
+    '--json',
+  ]);
+  expect(venue.json()).toMatchObject({ venue: { capacity: 400, email: `${tag}@venue.example` } });
+  const venueId: string = venue.json().venue.id;
+
+  // Same email, other spelling: the answer names the venue that is already in
+  const twice = await cli([
+    'venue-add',
+    '--name',
+    `JAZZHAUS ${tag}`,
+    '--city',
+    'Basel',
+    '--email',
+    `${tag.toUpperCase()}@venue.example`,
+  ]);
+  expect(twice.code).toBe(1);
+  expect(twice.err).toContain(venueId);
+  expect((await cli(['venue-add', '--name', 'Ohne Ort'])).code).toBe(2);
+
+  const added = await cli(
+    [
+      'draft-add',
+      '--venue',
+      venueId,
+      '--artist',
+      `lumen ${tag}`,
+      '--subject',
+      'Anfrage',
+      '--body',
+      '-',
+      '--why',
+      'Indie-Reihe',
+      '--json',
+    ],
+    {
+      stdin: 'Hallo,\n\nhabt ihr Platz?\n',
+    },
+  );
+  expect(added.code).toBe(0);
+  const drafts = (await cli(['drafts', '--json'])).json().drafts;
+  expect(drafts).toContainEqual(
+    expect.objectContaining({ id: added.json().draftId, subject: 'Anfrage', venue: `Jazzhaus ${tag}, Freiburg` }),
+  );
+  const venues = (await cli(['venues', '--artist', `Lumen ${tag}`, '--json'])).json().venues;
+  expect(venues).toEqual([
+    expect.objectContaining({ id: venueId, deals: [expect.objectContaining({ stage: 'draft', why: 'Indie-Reihe' })] }),
+  ]);
+  expect(
+    (await cli(['draft-add', '--venue', venueId, '--artist', 'Niemand', '--subject', 'x', '--body', 'x'])).code,
+  ).toBe(1);
+});

@@ -1,29 +1,30 @@
-# starter
-
-Diese Datei ist zugleich die Vorlage für neue Projekte. Dort ersetzen Titel, „Zweck & Links“, die Prüf-URL unter „Deploy“ und „Fallen“ die Angaben zur Vorlage. „Konventionen“ bleibt und folgt den Änderungen hier, das Nacht-Review prüft alle Prototypen dagegen.
+# gigpost
 
 ## Zweck & Links
 
-- Vorlage für Web- und Mobile-Prototypen: Bun, Hono, SvelteKit, Drizzle, Postgres, CLI in `apps/cli`, optional Flutter in `apps/mobile`. Neue Projekte: README.md, „Neues Projekt“.
-- Selbst nicht deployt. Im Projekt: Live-URL `https://<slug>.pleasance.org`, ab 1.0 eine eigene Domain (README, „Live als 1.0“), Coolify-Projekt `pleasance-<slug>` oder `privat-<slug>`, Ressource `<slug>`.
+- Robins Werkzeug fürs Booking (Künstler in Clubs und auf Festivals): Agenten legen per CLI Künstler, Locations und Anfrage-Entwürfe mit Begründung an, Robin geht die Entwürfe gesammelt durch („Entwürfe“), sendet von seiner eigenen Adresse und verfolgt den Stand im Board („Locations“), samt Antworten, Fristen, Notizen, Dokument-Links und nächsten Gigs („Heute“). Muster: Khala `two-phase-skill-mine-then-review`.
+- Live: https://gigpost.pleasance.org, Coolify-Projekt `pleasance-gigpost`, Ressource `gigpost`. Vorlage: `robinchoice/starter`. Nur Web, keine App.
+- API unter `/api/v1/booking` (`apps/api/src/routes/booking.ts`), Typen und Schemas in `packages/shared/src/booking.ts`, Web unter `routes/(app)` (`dashboard` = Heute, `drafts`, `locations`, Detail in `lib/components/DealDrawer.svelte`).
+- CLI für Agenten (README, „CLI“): `artists`, `artist-add`, `venues`, `venue-add`, `drafts`, `draft-add`. Vor dem Suchen `venues --json` lesen. Eine Location gibt es nur einmal (gleiche Mail oder gleicher Name und Ort, `venueKey`), pro Künstler und Location höchstens einen Vorgang. Senden kann die CLI nicht.
 
 ## Checks
 
-`bun run check && bun run test` (`test` baut das Web und testet den Build, dazu die CLI gegen die API), bei CLI-Änderungen zusätzlich `bun run build` (baut auch die CLI-Datei), bei App-Änderungen zusätzlich `flutter analyze && flutter test && node --test tool/testflight.test.mjs` in `apps/mobile`. Die Browser-Tests starten API und Web auf eigenen Ports (31100, 31101), unter dem ephemeren Linux-Portbereich (32768–60999), damit ausgehende Verbindungen sie nicht kurzzeitig belegen. Testet ein anderer Worktree gleichzeitig, mit anderen Ports unter 32768 aufrufen: `TEST_API_PORT=31102 TEST_WEB_PORT=31103 bun run test`.
+`bun run check && bun run test` (`test` baut das Web und testet den Build, dazu die CLI gegen die API), bei CLI-Änderungen zusätzlich `bun run build` (baut auch die CLI-Datei). Die Browser-Tests starten API und Web auf eigenen Ports (31100, 31101), unter dem ephemeren Linux-Portbereich (32768–60999), damit ausgehende Verbindungen sie nicht kurzzeitig belegen. Testet ein anderer Worktree gleichzeitig, mit anderen Ports unter 32768 aufrufen: `TEST_API_PORT=31102 TEST_WEB_PORT=31103 bun run test`. Lokale Postgres auf Port 5456.
 
 ## Deploy
 
-- Ein Push auf `main` baut nach grüner CI die Images (nicht bei Änderungen ausschließlich an den unter `paths-ignore` in `ci.yml` aufgeführten Pfaden) und deployt sie über die Coolify-API. Danach fotografiert sie die Live-Seite nach `docs/screenshots/`, committet geänderte Bilder mit `[skip ci]` und meldet den Deploy an `robinchoice/pleasance` (README, „Screenshots“). Ohne das Secret `COOLIFY_TOKEN` überspringt die CI Deploy, Screenshots und Meldung, so auch hier in der Vorlage. Ohne `PLEASANCE_DISPATCH_TOKEN` entfällt nur die Meldung. Pull Requests durchlaufen die CI unabhängig von den geänderten Pfaden.
-- App (`apps/mobile`): Ein Push auf `main` baut das Android-AAB und lädt es mit Upload-Keystore, `PLAY_SERVICE_ACCOUNT_JSON` und Repo-Variable `PLAY_UPLOAD=true` in den internen Play-Test. Die Variable erst nach dem ersten manuellen Upload setzen. Android lädt auch bei Release-Tags und manuellen Starts hoch, dann vom ausgewählten Branch oder Tag. iOS geht nur bei einem Tag `v*` oder mit `gh workflow run mobile.yml` zu TestFlight (macOS-Minuten zählen zehnfach). Manuelle Läufe verteilen nur intern, gepushte Release-Tags zusätzlich extern mit Beta-Prüfung. Tags setzen Agenten nur nach Robins Ja. Bei App-Änderungen, die Nutzer merken, fragen sie im Abschluss danach (Skill `push-deploy`). Der Job `testflight` prüft die interne Sichtbarkeit und verteilt Release-Builds; Einrichtung und Wiederholung stehen im README unter „Release“.
-- Prüfen: Bei einem deployrelevanten Push `gh run watch`. Der Deploy-Job ist erst grün, wenn `https://<slug>.pleasance.org/api/health` den Commit als `revision` meldet. Wird der CI-Lauf durch `paths-ignore` übersprungen, gibt es für diesen Commit keinen CI-Lauf und die Live-Revision bleibt unverändert.
-- Nur hier in der Vorlage: `.github/workflows/standards.yml` baut `standards/` als Image `starter-site` und deployt es über das Tailnet nach https://standards.pleasance.org (Coolify VPS 3, nur aus dem Tailnet). Aus der Vorlage erzeugte Repos überspringen den Workflow und können ihn mit `standards/` löschen.
+- Ein Push auf `main` baut nach grüner CI die Images (nicht bei Änderungen ausschließlich an den unter `paths-ignore` in `ci.yml` aufgeführten Pfaden) und deployt sie über die Coolify-API. Danach fotografiert sie die Live-Seite nach `docs/screenshots/`, committet geänderte Bilder mit `[skip ci]` und meldet den Deploy an `robinchoice/pleasance` (README, „Screenshots“). Ohne das Secret `COOLIFY_TOKEN` überspringt die CI Deploy, Screenshots und Meldung. Ohne `PLEASANCE_DISPATCH_TOKEN` entfällt nur die Meldung. Pull Requests durchlaufen die CI unabhängig von den geänderten Pfaden.
+- Prüfen: Bei einem deployrelevanten Push `gh run watch`. Der Deploy-Job ist erst grün, wenn `https://gigpost.pleasance.org/api/health` den Commit als `revision` meldet. Wird der CI-Lauf durch `paths-ignore` übersprungen, gibt es für diesen Commit keinen CI-Lauf und die Live-Revision bleibt unverändert.
 
 ## Fallen
 
-- Play App Signing: Google verwendet für ausgelieferte Apps einen eigenen App-Signaturschlüssel. Dessen SHA-1 zusätzlich beim Android-Maps-Key erlauben (falls genutzt), dessen SHA-256 neben dem Upload-Key in `ANDROID_CERT_SHA256` für `/.well-known/assetlinks.json` aufnehmen (App-Links/Passkeys). Fingerprints stehen in der Play Console, README „Release“.
-- Secret-Scan: Gitleaks 8.30.1 liest zusätzlich zu `--gitleaks-ignore-path` auch `.gitleaksignore` aus dem Checkout. Der Workflow ersetzt diese Datei deshalb ebenfalls durch die Fassung aus `CONFIG_REF`, bei Fork-PRs also aus dem Base-Commit.
-- Was hier geändert wird, landet in jedem neuen Projekt und über das Nacht-Review als Befund in allen bestehenden. Konventionen nur ändern, wenn sie für alle Prototypen gelten.
-- `standards/` liest die Tabellen „Farbband“ und „Produktfarbe“ aus DESIGN.md: Spaltenreihenfolge und Ausschnitte im Format `1,00–1,35` beibehalten. Zeichnungen der Zeichen stehen in `SIGNS` in `standards/main.js`, ein neues Produkt bekommt dort bis dahin einen Punkt.
+- Ein Arbeitsbereich für alle Konten: Jedes angemeldete Konto sieht und ändert alle Künstler, Locations und Vorgänge. Das passt, solange nur Robin und das Agenten-Testkonto drin sind. Wer Tester einlädt, gibt ihnen Robins Kontakte. Bevor gigpost für andere Booker öffnet, Daten pro Konto oder Team trennen.
+- Senden geht nur für Admins aus `ADMIN_EMAILS` (`requireAdmin`), denn die Mail geht in Robins Namen an Dritte. admin@pleasance.org bereitet nur vor. Keinen Weg bauen, auf dem Agenten senden.
+- Versand über `BOOKING_SMTP_*` und `BOOKING_FROM` (`lib/booking-mail.ts`), getrennt vom noreply-SMTP der Login-Mails. Ein Proton-SMTP-Token gehört zu genau einer Absenderadresse. Ohne SMTP landen die Mails außerhalb von Produktion nur im API-Log (`[booking-mail]`), in Produktion bleibt der Versand aus (503). Beim Testen nie an echte Venues senden, nur an eigene Testadressen wie admin@pleasance.org, Beispieldaten nutzen `.example`-Adressen.
+- Nachfassen: Ein Vorgang im Stand „Angefragt“ ohne Antwort seit `FOLLOW_UP_DAYS` (10) erscheint unter „Nachfassen“. Die Nachfass-Mail kommt aus `followUpBody` in `messages.ts`, in der Sprache der Oberfläche, und antwortet per `In-Reply-To` im Thread der Anfrage.
+- Antworten markiert Robin von Hand („Antwort erhalten“). Automatisch einlesen über die Proton Bridge ist die nächste Stufe, ebenso Datei-Uploads statt Dokument-Links (dann nach S3, AGENTS.md „Zustandslos“).
+- Verworfene Entwürfe und Absagen landen im Stand `archived`. Der Vorgang bleibt, damit Agenten dieselbe Location für denselben Künstler nicht erneut vorschlagen.
+- Name: gigpost.app und gigpost.de waren am 26.10.2026 frei. Die Markenprüfung (DPMA, TMview) steht aus, Robin prüft sie vor 1.0. Konkurrenz: Gig App (gig.app), Venue-Suche und Pitches über Gmail für einzelne Künstler in den USA.
 
 ## Konventionen
 

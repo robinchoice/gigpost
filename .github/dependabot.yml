@@ -10,14 +10,6 @@ updates:
     groups:
       all: { patterns: ['*'] }
 
-  # Web-only projects: remove this entire block when deleting apps/mobile.
-  - package-ecosystem: pub
-    directory: /apps/mobile
-    schedule: { interval: weekly }
-    cooldown: { default-days: 7 }
-    groups:
-      all: { patterns: ['*'] }
-
   - package-ecosystem: github-actions
     directory: /
     schedule: { interval: weekly }

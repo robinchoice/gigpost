@@ -31,3 +31,8 @@ export function loginCode(email: string) {
     { cwd: apiDirectory, env: process.env, encoding: 'utf8' },
   ).trim();
 }
+
+// Settings, invites, feedback and logout sit in the header's menu
+export async function openMenu(page: Page) {
+  await page.getByText('Menü', { exact: true }).click();
+}

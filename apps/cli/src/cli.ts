@@ -3,11 +3,12 @@ import { APP_NAME, type Messages, messages, pickLocale } from '@app/shared';
 import { createClient } from './client';
 import { type Command, EXIT, Failure, type Io, type Result } from './command';
 import { auth } from './commands/auth';
+import { booking } from './commands/booking';
 import { settings } from './commands/settings';
 import { DEFAULT_URL, loadSession, SLUG } from './config';
 
 // Every command of the CLI. A new one goes in here (README, „CLI“).
-export const commands: Record<string, Command> = { ...auth, settings };
+export const commands: Record<string, Command> = { ...auth, settings, ...booking };
 
 const globalOptions = {
   json: { type: 'boolean' },

@@ -1,6 +1,6 @@
 name: CI
 
-# Docs and the mobile app (own workflow mobile.yml) do not change the web images,
+# Docs do not change the web images,
 # so they skip push runs.
 on:
   push:
@@ -10,9 +10,6 @@ on:
       - AGENTS.md
       - CLAUDE.md
       - DESIGN.md
-      - apps/mobile/**
-      - .github/workflows/mobile.yml
-      - .github/workflows/standards.yml
       - .github/workflows/secrets.yml
       - .gitleaks.toml
   pull_request:

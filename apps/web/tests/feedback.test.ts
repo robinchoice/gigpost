@@ -1,7 +1,7 @@
 import { LIVE } from '@app/shared';
 import { expect, test } from '@playwright/test';
 import postgres from 'postgres';
-import { logIn } from './login';
+import { logIn, openMenu } from './login';
 
 const sql = postgres(process.env.DATABASE_URL!, { connection: { timezone: 'UTC' }, onnotice: () => {} });
 test.afterAll(() => sql.end());
@@ -55,6 +55,7 @@ test('the bug button sends a marked screenshot of the page', async ({ page }) =>
 
 test('the header takes ideas without a screenshot', async ({ page }) => {
   const email = await logIn(page);
+  await openMenu(page);
   await page.getByRole('button', { name: 'Feedback geben' }).click();
 
   const panel = page.getByRole('dialog', { name: 'Feedback geben' });

@@ -1,7 +1,7 @@
 import { messages } from '@app/shared';
 import { expect, type Page, test } from '@playwright/test';
 import postgres from 'postgres';
-import { logIn, loginCode } from './login';
+import { logIn, loginCode, openMenu } from './login';
 
 const sql = postgres(process.env.DATABASE_URL!, { connection: { timezone: 'UTC' }, onnotice: () => {} });
 test.afterAll(() => sql.end());
@@ -92,8 +92,9 @@ test('the language button switches to English and keeps it', async ({ page }) =>
 test('a magic link opens the dashboard until logout', async ({ page }) => {
   const email = freshEmail();
   await logIn(page, email);
-  await expect(page.getByRole('heading', { name: `Hallo ${email.split('@')[0]}` })).toBeVisible();
+  await expect(page.getByRole('heading', { name: new RegExp(`, ${email.split('@')[0]}$`) })).toBeVisible();
 
+  await openMenu(page);
   await page.getByRole('button', { name: 'Abmelden' }).click();
   await expect(page).toHaveURL(/\/$/);
   await page.goto('/dashboard');
@@ -104,12 +105,14 @@ test('a magic link opens the dashboard until logout', async ({ page }) => {
 test('the admin invites a tester, who can log in afterwards', async ({ page }) => {
   const tester = freshEmail();
   await logIn(page, 'e2e-admin@example.com');
+  await openMenu(page);
   await page.getByRole('link', { name: 'Tester einladen' }).click();
   await page.getByLabel('E-Mail').fill(tester);
   await page.getByRole('button', { name: 'Einladen' }).click();
   await expect(page.getByText(`Einladung an ${tester} verschickt`)).toBeVisible();
   expect(await sql`select 1 from users where email = ${tester}`).toHaveLength(1);
 
+  await openMenu(page);
   await page.getByRole('button', { name: 'Abmelden' }).click();
   await expect(page).toHaveURL(/\/$/);
   await openHydrated(page, '/login');
@@ -120,6 +123,7 @@ test('the admin invites a tester, who can log in afterwards', async ({ page }) =
 
 test('others see no invite and get 403 from the API', async ({ page }) => {
   await logIn(page, freshEmail());
+  await openMenu(page);
   await expect(page.getByRole('link', { name: 'Tester einladen' })).toBeHidden();
   const res = await page.request.post('/api/v1/auth/invite', { data: { email: freshEmail() } });
   expect(res.status()).toBe(403);
@@ -156,6 +160,7 @@ test('a passkey added in the settings logs in without mail until it is removed',
 
   // Logout has to finish before the next page loads, or that page still sees the session.
   // The virtual authenticator picks the passkey the login page offers as autofill
+  await openMenu(page);
   await page.getByRole('button', { name: 'Abmelden' }).click();
   await expect(page).toHaveURL(/\/$/);
   await page.goto('/login?next=%2Fsettings');
@@ -166,6 +171,7 @@ test('a passkey added in the settings logs in without mail until it is removed',
   await page.addInitScript(() => {
     PublicKeyCredential.isConditionalMediationAvailable = async () => false;
   });
+  await openMenu(page);
   await page.getByRole('button', { name: 'Abmelden' }).click();
   await expect(page).toHaveURL(/\/$/);
   await openHydrated(page, '/login');
@@ -175,6 +181,7 @@ test('a passkey added in the settings logs in without mail until it is removed',
 
   await page.getByRole('button', { name: 'Entfernen' }).click();
   await expect(page.getByText('Noch kein Passkey.')).toBeVisible();
+  await openMenu(page);
   await page.getByRole('button', { name: 'Abmelden' }).click();
   await expect(page).toHaveURL(/\/$/);
   await openHydrated(page, '/login');
