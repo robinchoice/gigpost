@@ -256,6 +256,9 @@ const de = {
   backToToday: 'Zurück zu Heute',
   noDrafts: 'Keine Entwürfe. Agenten legen neue per CLI an.',
   allArtists: 'Alle Künstler',
+  removeArtist: (name: string) => `${name} entfernen`,
+  confirmRemoveArtist: (name: string) => `${name} mit allen Vorgängen, Notizen und dem Verlauf löschen?`,
+  artistRemoved: (name: string) => `${name} entfernt`,
   dragHint:
     'Karten ziehen ändert den Stand, im Detail geht es auch per Auswahl. Entwürfe verschickst du über „Entwürfe“ als Stapel.',
   noArtists: 'Noch keine Künstler. Agenten legen sie per CLI an: gigpost artist-add.',
@@ -546,6 +549,9 @@ const en: Messages = {
   backToToday: 'Back to Today',
   noDrafts: 'No drafts. Agents add new ones through the CLI.',
   allArtists: 'All artists',
+  removeArtist: (name) => `Remove ${name}`,
+  confirmRemoveArtist: (name) => `Delete ${name} with all deals, notes and history?`,
+  artistRemoved: (name) => `${name} removed`,
   dragHint:
     'Dragging a card changes its stage, the detail view has a picker too. Drafts go out as a stack under "Drafts".',
   noArtists: 'No artists yet. Agents add them through the CLI: gigpost artist-add.',

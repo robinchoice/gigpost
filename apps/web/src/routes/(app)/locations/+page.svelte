@@ -14,6 +14,7 @@
     statusLine,
   } from '$lib/booking.svelte';
   import { t } from '$lib/i18n';
+  import { toast } from '$lib/toast.svelte';
 
   // 'all' or an artist id
   let filter = $state('all');
@@ -31,6 +32,16 @@
   async function move(deal: Deal, stage: Stage) {
     if (deal.stage === stage) return;
     await change(() => api.patch(`/booking/deals/${deal.id}`, { stage }));
+  }
+
+  const selected = $derived(booking.data?.artists.find((artist) => artist.id === filter));
+
+  async function removeArtist() {
+    const artist = selected;
+    if (!artist || !confirm(t().confirmRemoveArtist(artist.name))) return;
+    await change(() => api.delete(`/booking/artists/${artist.id}`));
+    filter = 'all';
+    toast(t().artistRemoved(artist.name));
   }
 
   function drop(stage: Stage) {
@@ -88,6 +99,9 @@
     </button>
   </div>
   {#if booking.data.artists.length === 0}<p class="muted">{t().noArtists}</p>{/if}
+  {#if selected && booking.data.canSend}
+    <button type="button" class="ghost-btn remove" onclick={removeArtist}>{t().removeArtist(selected.name)}</button>
+  {/if}
 
   <div class="tabs">
     {#each STAGES as stage (stage)}
@@ -161,6 +175,9 @@
   }
   .tabs {
     display: none;
+  }
+  .remove {
+    margin: -6px 0 8px;
   }
   .board {
     display: grid;

@@ -149,6 +149,15 @@ export const bookingRoutes = new Hono<AppEnv>()
     return c.json({ artist: { id: artist.id, name, kind, epk, color: artist.color } });
   })
 
+  // Removes an artist with all their deals, such as test data. Admins only,
+  // the history goes with it.
+  .delete('/artists/:id', requireAdmin, async (c) => {
+    const id = validId(c);
+    if (!id) return notFound(c);
+    const [artist] = await c.get('db').delete(artists).where(eq(artists.id, id)).returning({ id: artists.id });
+    return artist ? c.json({ ok: true }) : notFound(c);
+  })
+
   // Agents add what they found. A venue with the same email or the same name
   // and city exists only once, the answer names it.
   .post('/venues', validJson(venueSchema), async (c) => {

@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, expect, spyOn, test } from 'bun:test';
+import { afterAll, expect, spyOn, test } from 'bun:test';
 import { createDb, dealEvents, deals, migrateDb, users } from '@app/db';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
@@ -10,7 +10,8 @@ const db = createDb(process.env.DATABASE_URL);
 const app = createApp(db);
 const log = spyOn(console, 'log').mockImplementation(() => {});
 
-beforeAll(() => migrateDb(process.env.DATABASE_URL));
+// Before the sessions below, which need the tables
+await migrateDb(process.env.DATABASE_URL);
 afterAll(() => {
   delete process.env.ADMIN_EMAILS;
   return db.$client.end();
@@ -168,4 +169,12 @@ test('notes, deadlines and document links belong to a deal', async () => {
   expect(items.map((item) => item.kind).sort()).toEqual(['deadline', 'doc']);
   expect(booking.canSend).toBe(true);
   expect((await read(request('GET', '', agent), bookingAnswer)).canSend).toBe(false);
+});
+
+test('only admins remove an artist, the deals go with them', async () => {
+  const ids = await artistAndVenue();
+  const { dealId } = await read(draft(ids), created);
+  expect((await request('DELETE', `/artists/${ids.artistId}`, agent)).status).toBe(403);
+  expect((await request('DELETE', `/artists/${ids.artistId}`, robin)).status).toBe(200);
+  expect(await db.select().from(deals).where(eq(deals.id, dealId))).toHaveLength(0);
 });
