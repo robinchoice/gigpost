@@ -164,7 +164,7 @@
   }
   .grid {
     display: grid;
-    grid-template-columns: 1.3fr 1fr;
+    grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
     gap: 16px;
     margin-top: 16px;
     align-items: start;
@@ -191,7 +191,7 @@
   }
   @media (max-width: 700px) {
     .grid {
-      grid-template-columns: 1fr;
+      grid-template-columns: minmax(0, 1fr);
     }
     .hero {
       flex-direction: column;

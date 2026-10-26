@@ -129,9 +129,10 @@ export type Deal = {
 // sender, null while sending is not set up.
 export type Booking = { artists: Artist[]; deals: Deal[]; canSend: boolean; from: string | null };
 
-// A request waits for a reply for FOLLOW_UP_DAYS or more, and no follow-up draft is open
+// A request waits for a reply for FOLLOW_UP_DAYS or more. It stays a follow-up
+// while its follow-up draft waits under Drafts.
 export function needsFollowUp(deal: Deal, now = new Date()) {
-  if (deal.stage !== 'asked' || !deal.lastSentAt || deal.draft) return false;
+  if (deal.stage !== 'asked' || !deal.lastSentAt) return false;
   if (deal.lastReplyAt && deal.lastReplyAt > deal.lastSentAt) return false;
   return now.getTime() - new Date(deal.lastSentAt).getTime() >= FOLLOW_UP_DAYS * 864e5;
 }

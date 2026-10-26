@@ -97,7 +97,7 @@
   {:else if index >= queue.length || !current}
     <div class="card finished">
       <h1>{t().reviewDone}</h1>
-      <p class="muted">{t().reviewDoneText(sent)}</p>
+      <p class="muted">{sent ? t().reviewDoneText(sent) : t().reviewSkipped}</p>
       <Button href="/dashboard">{t().backToToday}</Button>
     </div>
   {:else}
@@ -144,7 +144,7 @@
         {#if current.venue.website}
           <a class="small" href={current.venue.website} target="_blank" rel="noopener noreferrer">{current.venue.website}</a>
         {/if}
-        {#if current.why}
+        {#if current.why && !followUp}
           <div class="why"><b>{t().whyAgent}</b><br />{current.why}</div>
         {/if}
         {#each openDeadlines(current) as item (item.id)}

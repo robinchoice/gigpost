@@ -1,3 +1,6 @@
+// The day in a follow-up mail, as Robin sees it, whatever zone the server runs in
+const BOOKING_TIME_ZONE = 'Europe/Berlin';
+
 // Every text that web and API show, one object per language. TypeScript reports
 // any text that English lacks. The app has its own in lib/core/messages.dart.
 const de = {
@@ -192,7 +195,7 @@ const de = {
   draftOpen: 'Für diese Location wartet schon ein Entwurf.',
   followUpSubject: (subject: string) => (subject.startsWith('Re: ') ? subject : `Re: ${subject}`),
   followUpBody: (first: string, artist: string, sent: Date | null) =>
-    `Hallo${first ? ` ${first}` : ''},\n\nich wollte kurz nachhaken, ob meine Anfrage für ${artist}${sent ? ` vom ${sent.toLocaleDateString('de-DE')}` : ''} angekommen ist. Ich freue mich auf deine Antwort.\n\nViele Grüße`,
+    `Hallo${first ? ` ${first}` : ''},\n\nich wollte kurz nachhaken, ob meine Anfrage für ${artist}${sent ? ` vom ${sent.toLocaleDateString('de-DE', { timeZone: BOOKING_TIME_ZONE })}` : ''} angekommen ist. Ich freue mich auf deine Antwort.\n\nViele Grüße`,
   stageDraft: 'Entwurf',
   stageAsked: 'Angefragt',
   stageTalking: 'Im Gespräch',
@@ -255,6 +258,8 @@ const de = {
     `${n === 1 ? '1 Mail' : `${n} Mails`} gesendet. Anfragen stehen unter Locations als „Angefragt“, nach 10 Tagen ohne Antwort erscheinen sie unter Nachfassen.`,
   backToToday: 'Zurück zu Heute',
   noDrafts: 'Keine Entwürfe. Agenten legen neue per CLI an.',
+  reviewSkipped: 'Für jetzt durch. Übersprungene Entwürfe warten weiter unter „Entwürfe“.',
+  stageHintTouch: 'Den Stand änderst du im Detail einer Karte. Entwürfe verschickst du über „Entwürfe“ als Stapel.',
   allArtists: 'Alle Künstler',
   removeArtist: (name: string) => `${name} entfernen`,
   confirmRemoveArtist: (name: string) => `${name} mit allen Vorgängen, Notizen und dem Verlauf löschen?`,
@@ -487,7 +492,7 @@ const en: Messages = {
   draftOpen: 'A draft for this venue is already waiting.',
   followUpSubject: (subject) => (subject.startsWith('Re: ') ? subject : `Re: ${subject}`),
   followUpBody: (first, artist, sent) =>
-    `Hi${first ? ` ${first}` : ''},\n\nI just wanted to check whether my request for ${artist}${sent ? ` from ${sent.toLocaleDateString('en-GB')}` : ''} reached you. Looking forward to hearing from you.\n\nBest regards`,
+    `Hi${first ? ` ${first}` : ''},\n\nI just wanted to check whether my request for ${artist}${sent ? ` from ${sent.toLocaleDateString('en-GB', { timeZone: BOOKING_TIME_ZONE })}` : ''} reached you. Looking forward to hearing from you.\n\nBest regards`,
   stageDraft: 'Draft',
   stageAsked: 'Asked',
   stageTalking: 'In talks',
@@ -548,6 +553,8 @@ const en: Messages = {
     `${n === 1 ? '1 mail' : `${n} mails`} sent. Requests show under Venues as "Asked", after 10 days without a reply they come up under Follow up.`,
   backToToday: 'Back to Today',
   noDrafts: 'No drafts. Agents add new ones through the CLI.',
+  reviewSkipped: 'Done for now. Skipped drafts keep waiting under "Drafts".',
+  stageHintTouch: 'Change the stage in the detail view of a card. Drafts go out as a stack under "Drafts".',
   allArtists: 'All artists',
   removeArtist: (name) => `Remove ${name}`,
   confirmRemoveArtist: (name) => `Delete ${name} with all deals, notes and history?`,

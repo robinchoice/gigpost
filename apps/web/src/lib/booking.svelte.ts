@@ -47,9 +47,12 @@ export const daysSince = (iso: string) =>
   Math.max(0, Math.round((startOfToday() - new Date(new Date(iso).toDateString()).getTime()) / DAY));
 
 const locale = () => dateLocales[page.data.locale];
-export const shortDate = (date: string) =>
-  new Date(`${date.slice(0, 10)}T00:00:00`).toLocaleDateString(locale(), { day: '2-digit', month: '2-digit' });
-export const longDate = (date: string) => new Date(`${date.slice(0, 10)}T00:00:00`).toLocaleDateString(locale());
+// A YYYY-MM-DD day as it is, a timestamp in the browser's time zone
+const asDate = (value: string) => new Date(value.length === 10 ? `${value}T00:00:00` : value);
+export const shortDate = (value: string) =>
+  asDate(value).toLocaleDateString(locale(), { day: '2-digit', month: '2-digit' });
+export const longDate = (value: string) =>
+  asDate(value).toLocaleDateString(locale(), { day: '2-digit', month: '2-digit', year: 'numeric' });
 
 export function dueLabel(date: string) {
   const days = daysUntil(date);

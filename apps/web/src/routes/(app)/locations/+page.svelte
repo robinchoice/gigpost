@@ -143,7 +143,8 @@
     </section>
   {/if}
 
-  <p class="small muted">{t().dragHint}</p>
+  <p class="small muted hint">{t().dragHint}</p>
+  <p class="small muted hint-touch">{t().stageHintTouch}</p>
 {/if}
 
 <style>
@@ -174,6 +175,9 @@
     margin-left: auto;
   }
   .tabs {
+    display: none;
+  }
+  .hint-touch {
     display: none;
   }
   .remove {
@@ -256,6 +260,12 @@
     }
     .col h3 {
       display: none;
+    }
+    .hint {
+      display: none;
+    }
+    .hint-touch {
+      display: block;
     }
   }
 </style>
